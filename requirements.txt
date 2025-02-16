@@ -4,3 +4,7 @@ dash
 transformers
 torch
 numpy
+dash-bootstrap-components
+dash-iconify
+beautifulsoup4
+openpyxl
