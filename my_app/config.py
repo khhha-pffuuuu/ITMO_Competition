@@ -12,6 +12,5 @@ ACCENT_COLOR = "#505050"
 PLACEHOLDER_COLOR = "#888888"
 
 # Название базовой модели и путь к весам дообученной
-model_name = "cointegrated/rubert-tiny-sentiment-balanced"
-weights_path = '../models/model.pth'
+model_path = "../models"
 

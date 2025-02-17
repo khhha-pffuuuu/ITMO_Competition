@@ -1,5 +1,5 @@
 import dash
-from config import external_stylesheets, model_name, weights_path
+from config import external_stylesheets, model_path
 from layout import serve_layout
 from callbacks import register_callbacks
 from utils import load_model
@@ -9,7 +9,7 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 app.title = "Анализ тональности"
 
 # Загрузка модели
-tokenizer, model = load_model(model_name, weights_path)
+tokenizer, model = load_model(model_path)
 
 # Установка layout
 app.layout = serve_layout()

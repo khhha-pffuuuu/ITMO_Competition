@@ -13,22 +13,22 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 
 # Загрузка модели
-def load_model(base_model, weights_path):
-    tokenizer = AutoTokenizer.from_pretrained(base_model)
-    model = AutoModelForSequenceClassification.from_pretrained(base_model)
+def load_model(model_path):
+    tokenizer = AutoTokenizer.from_pretrained(model_path + '/tokenizer')
+    model = AutoModelForSequenceClassification.from_pretrained(model_path + '/model')
 
-    model.classifier = nn.Sequential(
-        nn.Linear(312, 4096),
-        nn.ReLU(),
-        nn.Linear(4096, 4096),
-        nn.ReLU(),
-        nn.Linear(4096, 512),
-        nn.ReLU(),
-        nn.Linear(512, 3)
-    )
-
-    model.to('cpu')
-    model.load_state_dict(t.load(weights_path))
+    # model.classifier = nn.Sequential(
+    #     nn.Linear(312, 4096),
+    #     nn.ReLU(),
+    #     nn.Linear(4096, 4096),
+    #     nn.ReLU(),
+    #     nn.Linear(4096, 512),
+    #     nn.ReLU(),
+    #     nn.Linear(512, 3)
+    # )
+    #
+    # model.to('cpu')
+    # model.load_state_dict(t.load(weights_path))
 
     return tokenizer, model
 
