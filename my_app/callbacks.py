@@ -146,3 +146,35 @@ def register_callbacks(app, model, tokenizer):
             disabled_style["backgroundColor"] = "#1a1a1a"
             return True, disabled_style
         return False, base_style
+
+    # Callback для отправки сообщений в чат
+    @app.callback(
+        [Output("chat-history", "data"),
+        Output("chat-messages", "children"),
+        Output("chat-input", "value")],
+        Input("chat-send", "n_clicks"),
+        [State("chat-input", "value"),
+        State("chat-history", "data")],
+        prevent_initial_call=True
+    )
+    def update_chat(n_clicks, new_message, history):
+        # Если ничего не введено или введена строка из пробелов, не обновляем
+        if new_message is None or new_message.strip() == "":
+            raise dash.exceptions.PreventUpdate
+
+        # Если истории ещё нет, инициализируем список
+        history = history or []
+        # Добавляем новое сообщение (без лишних пробелов)
+        history.append(new_message.strip())
+
+        # Формируем список для отображения сообщений
+        messages = []
+        for msg in history:
+            messages.append(html.Div(msg, style={
+                "backgroundColor": ACCENT_COLOR,
+                "padding": "10px",
+                "borderRadius": "10px",
+                "marginBottom": "10px",
+                "color": TEXT_COLOR
+            }))
+        return history, messages, ""  # Очищаем поле ввода после отправки
