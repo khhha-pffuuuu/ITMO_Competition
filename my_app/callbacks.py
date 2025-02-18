@@ -1,7 +1,7 @@
 import pandas as pd
 
 import dash
-from dash import html, dcc, callback_context
+from dash import html, dcc, callback_context, ALL
 from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
@@ -189,7 +189,55 @@ def register_callbacks(app, model, tokenizer):
             border_color = sentiment_colors[pred]
             messages.append(
                 html.Div([
-                    html.Div(msg, style={  # Само сообщение
+                    html.Div([  # Контейнер для сообщения и смайликов
+                        html.Div(msg, style={  # Само сообщение
+                            "backgroundColor": ACCENT_COLOR,
+                            "padding": "15px 30px",
+                            "borderRadius": "30px",
+                            "fontSize": "16px",
+                            "color": TEXT_COLOR,
+                            "flex": "1",
+                            "wordWrap": "break-word",
+                            "whiteSpace": "normal",
+                            "minWidth": "0",
+                            "maxWidth": "calc(100% - 150px)",
+                            "overflow-wrap": "break-word"
+                        }),
+                        html.Div([  # Контейнер для трех смайликов
+                            html.Div(id="emoji-container", children=[
+                                html.Span("😡", id={"type": "emoji", "index": f"{msg}-angry"}, n_clicks=0, style={
+                                    "padding": "10px",
+                                    "cursor": "pointer",
+                                    "color": "#f44336",
+                                    "fontSize": "20px"
+                                }),
+                                html.Span("😐", id={"type": "emoji", "index": f"{msg}-neutral"}, n_clicks=0, style={
+                                    "padding": "10px",
+                                    "cursor": "pointer",
+                                    "color": "#ffeb3b",
+                                    "fontSize": "20px"
+                                }),
+                                html.Span("😊", id={"type": "emoji", "index": f"{msg}-happy"}, n_clicks=0, style={
+                                    "padding": "10px",
+                                    "cursor": "pointer",
+                                    "color": "#4caf50",
+                                    "fontSize": "20px"
+                                })
+                            ], style={  # Стиль контейнера для смайликов
+                                "display": "flex",
+                                "alignItems": "center",
+                                "justifyContent": "space-between",
+                                "backgroundColor": "#e0e0e0",
+                                "borderRadius": "15px",
+                                "padding": "5px",
+                                "width": "100%",
+                                "marginLeft": "10px"
+                            })
+                        ])
+                    ], style={  # Общий стиль для сообщения и кнопок
+                        "display": "flex",
+                        "alignItems": "flex-start",
+                        "flex-wrap": "wrap",
                         "backgroundColor": ACCENT_COLOR,
                         "padding": "15px 30px",
                         "borderRadius": "30px",
@@ -197,11 +245,12 @@ def register_callbacks(app, model, tokenizer):
                         "color": TEXT_COLOR,
                         "flex": "1"
                     }),
-                    html.Div(["😡" if pred == 0 else "😐" if pred == 1 else "😊"], style={  # Иконка эмоции
+                    html.Div(["😡" if pred == 0 else "😐" if pred == 1 else "😊"], style={  # Текущая эмоция (неизменяемая)
                         "minWidth": "50px",
                         "textAlign": "center",
                         "fontSize": "20px",
-                        "color": border_color
+                        "color": border_color,
+                        "margin-left": "10px"
                     })
                 ], style={  # Контейнер для сообщения и предсказания
                     "display": "flex",
@@ -212,5 +261,7 @@ def register_callbacks(app, model, tokenizer):
                     "marginBottom": "10px"
                 })
             )
-
+            
         return history, messages, ""  # Очищаем поле ввода после отправки
+
+    
