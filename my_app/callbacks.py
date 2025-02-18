@@ -1,3 +1,5 @@
+import pandas as pd
+
 import dash
 from dash import html, dcc, callback_context
 from dash.dependencies import Input, Output, State
@@ -5,7 +7,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
 
 from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCENT_COLOR, PLACEHOLDER_COLOR
-from utils import parse_contents, classes_counts
+from utils import parse_contents, classes_counts, predict
 
 
 def register_callbacks(app, model, tokenizer):
@@ -150,31 +152,65 @@ def register_callbacks(app, model, tokenizer):
     # Callback для отправки сообщений в чат
     @app.callback(
         [Output("chat-history", "data"),
-        Output("chat-messages", "children"),
-        Output("chat-input", "value")],
-        Input("chat-send", "n_clicks"),
+         Output("chat-messages", "children"),
+         Output("chat-input", "value")],
+        [Input("chat-send", "n_clicks"),
+         Input("chat-input", "n_submit")],
         [State("chat-input", "value"),
-        State("chat-history", "data")],
+         State("chat-history", "data")],
         prevent_initial_call=True
     )
-    def update_chat(n_clicks, new_message, history):
+    def update_chat(n_clicks, n_submit, new_message, history):
+        # Проверяем, что что-то триггернулось
+        if not callback_context.triggered:
+            raise dash.exceptions.PreventUpdate
+
         # Если ничего не введено или введена строка из пробелов, не обновляем
         if new_message is None or new_message.strip() == "":
             raise dash.exceptions.PreventUpdate
 
+        # Предсказываем тональность сообщения
+        msg_to_df = pd.DataFrame({'MessageText': [new_message.strip()]})
+        prediction = predict(model, tokenizer, msg_to_df)
+
         # Если истории ещё нет, инициализируем список
         history = history or []
-        # Добавляем новое сообщение (без лишних пробелов)
-        history.append(new_message.strip())
+        history.append((new_message.strip(), int(prediction[0])))
+
+        sentiment_colors = {
+            0: "#FF4C4C",  # Красный (негатив)
+            1: "#A0A0A0",  # Серый (нейтральный)
+            2: "#4CAF50"  # Зеленый (позитив)
+        }
 
         # Формируем список для отображения сообщений
         messages = []
-        for msg in history:
-            messages.append(html.Div(msg, style={
-                "backgroundColor": ACCENT_COLOR,
-                "padding": "10px",
-                "borderRadius": "10px",
-                "marginBottom": "10px",
-                "color": TEXT_COLOR
-            }))
+        for msg, pred in history:
+            border_color = sentiment_colors[pred]
+            messages.append(
+                html.Div([
+                    html.Div(msg, style={  # Само сообщение
+                        "backgroundColor": ACCENT_COLOR,
+                        "padding": "15px 30px",
+                        "borderRadius": "30px",
+                        "fontSize": "16px",
+                        "color": TEXT_COLOR,
+                        "flex": "1"
+                    }),
+                    html.Div(["😡" if pred == 0 else "😐" if pred == 1 else "😊"], style={  # Иконка эмоции
+                        "minWidth": "50px",
+                        "textAlign": "center",
+                        "fontSize": "20px",
+                        "color": border_color
+                    })
+                ], style={  # Контейнер для сообщения и предсказания
+                    "display": "flex",
+                    "alignItems": "center",
+                    "gap": "10px",
+                    "borderLeft": f"5px solid {border_color}",
+                    "padding": "10px",
+                    "marginBottom": "10px"
+                })
+            )
+
         return history, messages, ""  # Очищаем поле ввода после отправки

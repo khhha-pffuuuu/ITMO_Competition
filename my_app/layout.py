@@ -29,7 +29,7 @@ def serve_layout():
             active_tab="data-tab",
             children=[
                 dbc.Tab(
-                    label="Данные",
+                    label="Разметка данных",
                     tab_id="data-tab",
                     children=[
                         # Панель инструментов: загрузка файла, очистка и запуск анализа (статистика)
@@ -49,6 +49,7 @@ def serve_layout():
                                         'textAlign': 'center',
                                         'backgroundColor': CARD_BG_COLOR,
                                         'color': TEXT_COLOR,
+                                        'cursor': 'pointer'
                                     },
                                     style_active={
                                         'backgroundColor': '#505050',
@@ -77,7 +78,7 @@ def serve_layout():
                                 dbc.Button(
                                     [DashIconify(icon="mdi:chart-bar", color="white", width=20)],
                                     id="analyze-button",
-                                    className="w-100",
+                                    className="w-100 no-focus",
                                     n_clicks=0,
                                     style={
                                         "backgroundColor": MAIN_BG_COLOR,
@@ -89,8 +90,7 @@ def serve_layout():
                                 ),
                                 width=2
                             ),
-                        ], className="mt-3 mb-3",
-                           style={"borderBottom": f"1px solid {BORDER_COLOR}", "paddingBottom": "15px"}),
+                        ], className="mt-3 mb-3"),
 
                         # Область отображения данных
                         html.Div(
@@ -112,20 +112,21 @@ def serve_layout():
                                     id='output-data-upload',
                                     style={
                                         "display": "none",
-                                        "overflow": "auto",
-                                        "position": "relative",
-                                        "scrollbarWidth": "thin",
-                                        "scrollbarColor": f"{BORDER_COLOR} {CARD_BG_COLOR}",
+                                        "overflowY": "auto",
+                                        "height": "100%",
+                                        "padding": "10px",
+                                        "boxSizing": "border-box"
                                     }
                                 )
                             ],
                             style={
                                 "backgroundColor": CARD_BG_COLOR,
                                 "borderRadius": "10px",
-                                "padding": "10px",
                                 "border": f"1px solid {BORDER_COLOR}",
-                                "maxWidth": "100%",
+                                "height": "400px",
                                 "overflow": "hidden",
+                                "position": "relative",
+                                "maxWidth": "100%"
                             }
                         )
                     ]
@@ -140,35 +141,46 @@ def serve_layout():
                             style={
                                 "backgroundColor": CARD_BG_COLOR,
                                 "borderRadius": "10px",
-                                "padding": "10px",
+                                "padding": "10px 20px",
                                 "border": f"1px solid {BORDER_COLOR}",
                                 "maxWidth": "100%",
+                                "height": "400px",
                                 "overflowY": "auto",
                                 "color": TEXT_COLOR,
-                                "minHeight": "300px"
+                                "marginTop": "16px",
+                                "scrollbarWidth": "thin",
+                                "scrollbarColor": f"{BORDER_COLOR} {CARD_BG_COLOR}",
                             }
                         ),
                         dbc.InputGroup([
                             dbc.Input(
                                 id="chat-input",
                                 placeholder="Введите сообщение...",
+                                n_submit=0,
+                                className="no-focus",
                                 style={
-                                    "borderRadius": "10px 0 0 10px",  # округление только слева
-                                    "backgroundColor": "#505050",      # серый фон
+                                    "borderRadius": "30px 0 0 30px",
+                                    "backgroundColor": CARD_BG_COLOR,
                                     "color": TEXT_COLOR,
-                                    "border": f"1px solid {BORDER_COLOR}"
+                                    "border": f"1px solid {BORDER_COLOR}",
+                                    'height': '50px',
+                                    'lineHeight': '50px',
+                                    "paddingLeft": '20px'
                                 }
                             ),
                             dbc.Button(
-                                "Отправить",
+                                DashIconify(icon="mdi:send", color=TEXT_COLOR, width=24),  # "Отправить",
                                 id="chat-send",
                                 color="secondary",
                                 style={
-                                    "borderRadius": "0 10px 10px 0",  # округление только справа
+                                    "paddingLeft": "20px",
+                                    "paddingRight": "20px",
+                                    "backgroundColor": CARD_BG_COLOR,
+                                    "borderRadius": "0 30px 30px 0",  # округление только справа
                                     "border": f"1px solid {BORDER_COLOR}"
                                 }
                             )
-                        ], style={"marginTop": "10px"})
+                        ], style={"marginTop": "20px"})
                     ]
                 )
             ],

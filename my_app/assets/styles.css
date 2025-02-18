@@ -1,0 +1,5 @@
+.no-focus:focus,
+.no-focus:active {
+    outline: none !important;
+    box-shadow: none !important;
+}
