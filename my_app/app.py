@@ -18,4 +18,4 @@ app.layout = serve_layout()
 register_callbacks(app, model=model, tokenizer=tokenizer)
 
 if __name__ == '__main__':
-    app.run_server(debug=True, dev_tools_ui=False, threaded=True)
+    app.run_server(debug=True, dev_tools_ui=False)  # , threaded=True
