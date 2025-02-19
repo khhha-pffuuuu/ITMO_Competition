@@ -177,4 +177,54 @@ def render_messages(history):
 
 
 def chat_fine_tuning(model, tokenizer, text, pred, feedback):
+    # Токенизируем текст
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding="max_length", max_length=128)
+    labels = torch.tensor(feedback)  # No need to unsqueeze, as feedback is a single integer
+    
+    # Создаем датасет из одного семпла
+    class SingleSampleDataset(torch.utils.data.Dataset):
+        def __init__(self, inputs, labels):
+            self.inputs = inputs
+            self.labels = labels
+        
+        def __len__(self):
+            return 1
+        
+        def __getitem__(self, idx):
+            item = {key: val[idx] for key, val in self.inputs.items()}
+            item["labels"] = self.labels
+            return item
+    
+    dataset = SingleSampleDataset(inputs, labels)
+    
+    # Настройки обучения
+    training_args = TrainingArguments(
+        output_dir="./single_sample_model",
+        num_train_epochs=1,
+        per_device_train_batch_size=1,
+        logging_steps=1,
+        save_steps=1,
+        learning_rate=5e-7,
+        evaluation_strategy="no"
+    )
+    
+    # Обновляем функцию потерь, если нужно
+    class CustomTrainer(Trainer):
+        def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+            labels = inputs.pop("labels")
+            outputs = model(**inputs)
+            logits = outputs.logits
+            loss_fn = torch.nn.CrossEntropyLoss()
+            loss = loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
+            return (loss, outputs) if return_outputs else loss
+    
+    # Создаем тренера
+    trainer = CustomTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=dataset,
+    )
+    
+    # Начинаем обучение
+    trainer.train()
     print('Типа дообучилась')
