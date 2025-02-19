@@ -11,24 +11,14 @@ import torch.nn.functional as f
 
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
+from dash import html
+from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCENT_COLOR, PLACEHOLDER_COLOR
+
 
 # Загрузка модели
 def load_model(model_path):
     tokenizer = AutoTokenizer.from_pretrained(model_path + '/tokenizer')
     model = AutoModelForSequenceClassification.from_pretrained(model_path + '/model')
-
-    # model.classifier = nn.Sequential(
-    #     nn.Linear(312, 4096),
-    #     nn.ReLU(),
-    #     nn.Linear(4096, 4096),
-    #     nn.ReLU(),
-    #     nn.Linear(4096, 512),
-    #     nn.ReLU(),
-    #     nn.Linear(512, 3)
-    # )
-    #
-    # model.to('cpu')
-    # model.load_state_dict(t.load(weights_path))
 
     return tokenizer, model
 
@@ -101,3 +91,90 @@ def parse_contents(contents, filename, model, tokenizer):
     except Exception as e:
         print("Ошибка при чтении файла:", e)
         return None
+
+
+def render_messages(history):
+    sentiment_colors = {
+        0: "#FF4C4C",  # негатив
+        1: "#A0A0A0",  # нейтраль
+        2: "#4CAF50"  # позитив
+    }
+
+    messages = []
+    for i, (msg, pred, display_buttons) in enumerate(history):
+        border_color = sentiment_colors[pred]
+        messages.append(
+            html.Div([
+                html.Div([
+                    html.Div(msg, style={
+                        "backgroundColor": ACCENT_COLOR,
+                        "padding": "15px 30px",
+                        "borderRadius": "30px",
+                        "fontSize": "18px",
+                        "color": TEXT_COLOR,
+                        "flex": "1",
+                        "wordWrap": "break-word",
+                        "overflowWrap": "anywhere",
+                        "whiteSpace": "normal",
+                        "display": "inline-block",
+                        "maxWidth": "calc(100% - 150px)"
+                    }),
+                    html.Div(
+                        id='emoji-picker',
+                        children=[
+                            html.Span("😡", id={"type": "emoji", "msg_index": i, "index": 0}, n_clicks=0,
+                                      style={"cursor": "pointer", "marginRight": "7.5px", "fontSize": "20px"}),
+                            html.Span("😐", id={"type": "emoji", "msg_index": i, "index": 1}, n_clicks=0,
+                                      style={"cursor": "pointer", "marginRight": "7.5px", "fontSize": "20px"}),
+                            html.Span("😊", id={"type": "emoji", "msg_index": i, "index": 2}, n_clicks=0,
+                                      style={"cursor": "pointer", "fontSize": "20px"})
+                        ], style={
+                            'display': 'flex' if display_buttons else 'none',
+                            "position": 'absolute',
+                            'right': '30px',
+                            'top': '21px',
+                            "border": "1px solid #ccc",
+                            "backgroundColor": TEXT_COLOR,
+                            "borderRadius": "30px",
+                            "padding": "5px",
+                        }
+                    )
+                ], style={
+                    "display": "flex",
+                    "alignItems": "flex-start",
+                    'position': 'relative',
+                    "backgroundColor": ACCENT_COLOR,
+                    "padding": "15px 30px",
+                    "borderRadius": "30px",
+                    "fontSize": "16px",
+                    "color": TEXT_COLOR,
+                    "flex": "1"
+                }),
+                html.Div(
+                    ["😡" if pred == 0 else "😐" if pred == 1 else "😊"],
+                    style={
+                        "minWidth": "30px",
+                        "textAlign": "center",
+                        "fontSize": "30px",
+                        "color": border_color,
+                        "margin-left": "10px",
+                        'padding': '5px 6.5px',
+                        "borderRadius": "30px",
+                        'border': f"1px solid {BORDER_COLOR}",
+                    }
+                )
+            ], style={
+                "display": "flex",
+                "alignItems": "center",
+                "gap": "10px",
+                "borderLeft": f"5px solid {border_color}",
+                "padding": "10px",
+                "marginBottom": "10px"
+            })
+        )
+
+    return messages
+
+
+def chat_fine_tuning(model, tokenizer, text, pred, feedback):
+    print('Типа дообучилась')

@@ -11,6 +11,7 @@ def serve_layout():
         dcc.Store(id='stored-file', data={'contents': None, 'filename': None}),
         dcc.Store(id='data-processed', data=False),
         dcc.Store(id='chat-history', data=[]),
+        dcc.Store(id="processed-dataset", data=None),
 
         # Заголовок приложения
         html.H2(
@@ -33,64 +34,97 @@ def serve_layout():
                     tab_id="data-tab",
                     children=[
                         # Панель инструментов: загрузка файла, очистка и запуск анализа (статистика)
-                        dbc.Row([
-                            dbc.Col(
-                                dcc.Upload(
-                                    id='upload-data',
-                                    children=html.Div([
-                                        ' ',
-                                        html.A('Выберите файл (CSV/XLSX)', style={"color": TEXT_COLOR})
-                                    ]),
-                                    style={
-                                        'width': '100%',
-                                        'height': '50px',
-                                        'lineHeight': '50px',
-                                        'borderRadius': '50px',
-                                        'textAlign': 'center',
-                                        'backgroundColor': CARD_BG_COLOR,
-                                        'color': TEXT_COLOR,
-                                        'cursor': 'pointer'
-                                    },
-                                    style_active={
-                                        'backgroundColor': '#505050',
-                                        'transition': '0.1 background-color'
-                                    },
-                                    multiple=False
+                        dbc.Row(
+                            [
+                                # Поле загрузки файла
+                                dbc.Col(
+                                    dcc.Upload(
+                                        id="upload-data",
+                                        children=html.Div([
+                                            html.A("Выберите файл (CSV/XLSX)", style={"color": TEXT_COLOR})
+                                        ]),
+                                        style={
+                                            "width": "100%",
+                                            "height": "50px",
+                                            "lineHeight": "50px",
+                                            "borderRadius": "50px",
+                                            "textAlign": "center",
+                                            "backgroundColor": CARD_BG_COLOR,
+                                            "color": TEXT_COLOR,
+                                            "cursor": "pointer"
+                                        },
+                                        style_active={
+                                            "backgroundColor": "#505050",
+                                            "transition": "0.1s background-color"
+                                        },
+                                        multiple=False
+                                    ),
+                                    width=7
                                 ),
-                                width=8
-                            ),
-                            dbc.Col(
-                                dbc.Button(
-                                    [DashIconify(icon="mdi:trash-can-outline", color="white", width=20)],
-                                    id="reset-button",
-                                    className="w-100",
-                                    style={
-                                        "backgroundColor": MAIN_BG_COLOR,
-                                        "borderRadius": "50px",
-                                        "color": "white",
-                                        "height": "50px",
-                                        'border': f"1px solid {BORDER_COLOR}"
-                                    }
+
+                                # Кнопка сброса
+                                dbc.Col(
+                                    dbc.Button(
+                                        DashIconify(icon="mdi:trash-can-outline", color="white", width=20),
+                                        id="reset-button",
+                                        className="w-100",
+                                        style={
+                                            "backgroundColor": MAIN_BG_COLOR,
+                                            "borderRadius": "50px",
+                                            "color": "white",
+                                            "height": "50px",
+                                            "border": f"1px solid {BORDER_COLOR}"
+                                        }
+                                    ),
+                                    width=2
                                 ),
-                                width=2
-                            ),
-                            dbc.Col(
-                                dbc.Button(
-                                    [DashIconify(icon="mdi:chart-bar", color="white", width=20)],
-                                    id="analyze-button",
-                                    className="w-100 no-focus",
-                                    n_clicks=0,
-                                    style={
-                                        "backgroundColor": MAIN_BG_COLOR,
-                                        "borderRadius": "50px",
-                                        "color": "white",
-                                        "height": "50px",
-                                        'border': f"1px solid {BORDER_COLOR}"
-                                    }
+                                dbc.Tooltip("Очистить загруженные данные", target="reset-button", placement="top"),
+
+                                # Кнопка анализа
+                                dbc.Col(
+                                    dbc.Button(
+                                        DashIconify(icon="mdi:chart-bar", color="white", width=20),
+                                        id="analyze-button",
+                                        className="w-100 no-focus",
+                                        n_clicks=0,
+                                        style={
+                                            "backgroundColor": MAIN_BG_COLOR,
+                                            "borderRadius": "50px",
+                                            "color": "white",
+                                            "height": "50px",
+                                            "border": f"1px solid {BORDER_COLOR}"
+                                        }
+                                    ),
+                                    width=2
                                 ),
-                                width=2
-                            ),
-                        ], className="mt-3 mb-3"),
+                                dbc.Tooltip("Подсчитать статистику", target="analyze-button", placement="top"),
+
+                                # Кнопка скачивания
+                                dbc.Col(
+                                    dbc.Button(
+                                        DashIconify(icon="mdi:download", width=18),
+                                        id="download-dataset-btn",
+                                        className="no-focus",
+                                        color="primary",
+                                        disabled=True,
+                                        style={
+                                            "textAlign": "center",
+                                            "backgroundColor": TEXT_COLOR,
+                                            "color": MAIN_BG_COLOR,
+                                            "borderRadius": "50px",
+                                            "height": "50px",
+                                            'padding': '0 15px'
+                                        }
+                                    ),
+                                    width=1
+                                ),
+                                dbc.Tooltip("Скачайте обработанный файл", target="download-dataset-btn", placement="top"),
+
+                                # Компонент скачивания
+                                dcc.Download(id="download-dataset"),
+                            ],
+                            className="mt-3 mb-3"
+                        ),
 
                         # Область отображения данных
                         html.Div(
@@ -128,7 +162,30 @@ def serve_layout():
                                 "position": "relative",
                                 "maxWidth": "100%"
                             }
-                        )
+                        ),
+                        # html.Div(
+                        #     children=[
+                        #         # Кнопка скачать и Download
+                        #         dbc.Button(DashIconify(icon="mdi:download", width=18),
+                        #                    id="download-dataset-btn",
+                        #                    color="primary",
+                        #                    style={
+                        #                        'textAlign': 'center',
+                        #                        'backgroundColor': TEXT_COLOR,
+                        #                        'color': MAIN_BG_COLOR,
+                        #                        'borderRadius': '30px',
+                        #                        'padding': '10px 20px'
+                        #                    }),
+                        #         dcc.Download(id="download-dataset")
+                        #     ],
+                        #     style={
+                        #         "width": '100%',
+                        #         'display': 'flex',
+                        #         'justifyContent': 'right',
+                        #         'alignItems': 'center',
+                        #         "marginTop": "10px"
+                        #     }
+                        # ),
                     ]
                 ),
                 dbc.Tab(
