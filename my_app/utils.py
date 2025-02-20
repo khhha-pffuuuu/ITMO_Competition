@@ -17,8 +17,8 @@ from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCEN
 
 # Загрузка модели
 def load_model(model_path):
-    tokenizer = AutoTokenizer.from_pretrained(model_path + '/tokenizer')
-    model = AutoModelForSequenceClassification.from_pretrained(model_path + '/model')
+    tokenizer = AutoTokenizer.from_pretrained(model_path + '/base_model')
+    model = AutoModelForSequenceClassification.from_pretrained(model_path + '/base_model')
 
     return tokenizer, model
 
