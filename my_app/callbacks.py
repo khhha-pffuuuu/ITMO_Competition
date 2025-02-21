@@ -1,3 +1,5 @@
+from io import StringIO, BytesIO
+
 import pandas as pd
 
 import json
@@ -8,20 +10,27 @@ from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
 
-from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCENT_COLOR, PLACEHOLDER_COLOR
-from utils import parse_contents, classes_counts, predict, render_messages, chat_fine_tuning
+from flask import request
+
+from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCENT_COLOR, PLACEHOLDER_COLOR, ID2CLS
+from utils import get_user_model, parse_contents, predict, compute_stats, render_messages
+
+from db.db_utils import add_feedback
 
 
-def register_callbacks(app, model, tokenizer):
-    # При переходе по URL сбрасываем глобальную переменную
+def register_callbacks(app):
     @app.callback(
-        Output('page-init', 'children'),
-        Input('url', 'pathname')
+        Output("user-initialized", "data"),
+        Input("url", "pathname")
     )
-    def initialize_page(pathname):
-        global classes_counts
-        classes_counts = None
-        return ""
+    def check_user(_):
+        try:
+            response = requests.get("http://127.0.0.1:8050/init_user", timeout=5)
+            if response.status_code in [200, 204]:
+                return {"initialized": True}
+        except requests.exceptions.RequestException:
+            pass
+        return {"initialized": False}
 
     @app.callback(
         [Output('stored-file', 'data'),
@@ -33,13 +42,11 @@ def register_callbacks(app, model, tokenizer):
     )
     def update_store(contents, reset_clicks, filename, stored_data):
         ctx = callback_context
-        global classes_counts
         if not ctx.triggered:
             raise dash.exceptions.PreventUpdate
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
         if trigger_id == 'reset-button':
-            classes_counts = None
             return {'contents': None, 'filename': None}, None
         elif trigger_id == 'upload-data' and contents is not None:
             return {'contents': contents, 'filename': filename}, contents
@@ -51,15 +58,20 @@ def register_callbacks(app, model, tokenizer):
             Output('output-data-upload', 'style'),
             Output('no-data-text', 'style'),
             Output('data-processed', 'data'),
-            Output("processed-dataset", "data")  # <-- добавляем
+            Output("processed-dataset", "data"),
         ],
         Input('stored-file', 'data')
     )
     def update_output(stored_data):
-        global classes_counts
         if stored_data and stored_data.get('contents'):
-            df, stats = parse_contents(stored_data['contents'], stored_data['filename'], model, tokenizer)
-            classes_counts = stats
+            user_id = request.cookies.get("user_id", "default")
+            tokenizer, model = get_user_model(user_id)
+
+            df = parse_contents(stored_data['contents'], stored_data['filename'])
+
+            # Предсказываем классы
+            df['Class'] = predict(model, tokenizer, df)
+            df.Class = df.Class.apply(lambda x: ID2CLS[x])
 
             if df is not None:
                 table = dbc.Table.from_dataframe(
@@ -72,9 +84,9 @@ def register_callbacks(app, model, tokenizer):
                         "backgroundColor": CARD_BG_COLOR,
                         "width": "100%",
                         "tableLayout": "auto",
+                        'margin': '0'
                     }
                 )
-                csv_data = df.to_csv(index=False, encoding="utf-8")  # Генерируем CSV
 
                 return (
                     html.Div([
@@ -88,7 +100,7 @@ def register_callbacks(app, model, tokenizer):
                     {"display": "block"},
                     {"display": "none"},
                     True,
-                    csv_data  # <-- Возвращаем CSV в Store
+                    df.to_json(orient="records")
                 )
         # Если данных нет
         return html.Div(), {"display": "none"}, {
@@ -106,10 +118,14 @@ def register_callbacks(app, model, tokenizer):
         State("processed-dataset", "data"),
         prevent_initial_call=True
     )
-    def download_dataset(n_clicks, csv_data):
-        if not csv_data:
+    def download_dataset(n_clicks, df_json):
+        if not df_json:
             raise dash.exceptions.PreventUpdate
-        return dict(content=csv_data, filename="processed_dataset.csv")
+
+        df = pd.read_json(StringIO(df_json))
+
+        csv_data = df.to_csv(index=False, encoding="utf-8-sig")
+        return dict(content=csv_data, filename=f"processed_dataset.csv")
 
     # Callback для управления доступностью кнопки скачивания
     @app.callback(
@@ -139,16 +155,20 @@ def register_callbacks(app, model, tokenizer):
 
     @app.callback(
         Output("pie-chart", "figure"),
-        Input("modal", "is_open")
+        Input("modal", "is_open"),
+        State("processed-dataset", "data")
     )
-    def update_pie_chart(is_open):
-        global classes_counts
-        if is_open and classes_counts is not None:
-            items = sorted(classes_counts.items(), key=lambda x: x[1], reverse=True)
+    def update_pie_chart(is_open, df_json):
+        if is_open and df_json is not None:
+            df = pd.read_json(StringIO(df_json))
+            stats = compute_stats(df)
+
+            items = sorted(stats.items(), key=lambda x: x[1], reverse=True)
             if len(items) > 3:
                 items = items[:3]
-            labels, values = zip(*items)
-            fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=0.3)])
+
+            class_, values = zip(*items)
+            fig = go.Figure(data=[go.Pie(labels=class_, values=values, hole=0.3)])
             fig.update_layout(
                 title="Распределение классов",
                 paper_bgcolor=CARD_BG_COLOR,
@@ -184,71 +204,61 @@ def register_callbacks(app, model, tokenizer):
          Output("chat-messages", "children"),
          Output("chat-input", "value")],
         [Input("chat-send", "n_clicks"),
-         Input("chat-input", "n_submit")],
+         Input("chat-input", "n_submit"),
+         Input({"type": "emoji", "msg_index": dash.dependencies.ALL, "index": dash.dependencies.ALL}, "n_clicks")],
         [State("chat-input", "value"),
          State("chat-history", "data")],
         prevent_initial_call=True
     )
-    def update_chat(n_clicks, n_submit, new_message, history):
-        # Проверяем, что что-то триггернулось
-        if not callback_context.triggered:
-            raise dash.exceptions.PreventUpdate
-
-        # Если ничего не введено или введена строка из пробелов, не обновляем
-        if new_message is None or new_message.strip() == "":
-            raise dash.exceptions.PreventUpdate
-
-        # Предсказываем тональность сообщения
-        msg_to_df = pd.DataFrame({'MessageText': [new_message.strip()]})
-        prediction = predict(model, tokenizer, msg_to_df)
-
-        # Если истории ещё нет, инициализируем список
-        history = history or []
-        history.append([new_message.strip(), int(prediction[0]), True])
-
-        messages = render_messages(history)
-            
-        return history, messages, ""  # Очищаем поле ввода после отправки
-
-    @app.callback(
-        Output("chat-history", "data", allow_duplicate=True),
-        Input({"type": "emoji", "msg_index": dash.dependencies.ALL, "index": dash.dependencies.ALL}, "n_clicks"),
-        State("chat-history", "data"),
-        prevent_initial_call=True
-    )
-    def remove_emoji_window(n_clicks_list, history):
+    def update_chat(n_clicks, n_submit, emoji_clicks, new_message, history):
         """
-        При клике на любой смайл (😡, 😐, 😊) скрываем окно смайлов, т.е. ставим history[i][2] = False.
+        1. Отправляет сообщение (предсказывает тональность и обновляет историю).
+        2. Обрабатывает клик по смайлику (обновляет историю и fine-tuning).
+        3. Ререндерит чат после любого изменения.
         """
         if not callback_context.triggered:
             raise dash.exceptions.PreventUpdate
-        if history is None:
-            raise dash.exceptions.PreventUpdate
 
-        # Если суммарно не было ни одного клика, значит, вызов не из-за смайлика
-        if sum(n_clicks_list) == 0:
-            raise dash.exceptions.PreventUpdate
+        user_id = request.cookies.get("user_id", "default")
+        tokenizer, model = get_user_model(user_id)
 
-        # выясняем, какой именно смайл кликнули
-        triggered_id = callback_context.triggered[0]['prop_id'].split('.')[0]
-        triggered_dict = json.loads(triggered_id)  # { "type": "emoji", "msg_index": i, "index": j }
+        # Проверяем, что триггер вызван отправкой сообщения
+        trigger_id = callback_context.triggered[0]['prop_id'].split('.')[0]
 
-        msg_i = triggered_dict["msg_index"]
-        cls_i = triggered_dict["index"]
+        if trigger_id in ["chat-send", "chat-input"]:
+            # Если ничего не введено или введена строка из пробелов, не обновляем
+            if new_message is None or new_message.strip() == "":
+                raise dash.exceptions.PreventUpdate
 
-        # Если индекс в пределах истории, ставим display_buttons=False
-        if 0 <= msg_i < len(history):
-            history[msg_i][-1] = False
-            chat_fine_tuning(model, tokenizer, history[msg_i][0], history[msg_i][1], cls_i)
+            # Предсказываем тональность сообщения
+            msg_to_df = pd.DataFrame({'MessageText': [new_message.strip()]})
+            prediction = predict(model, tokenizer, msg_to_df)
 
-        return history
+            # Если истории ещё нет, инициализируем список
+            history = history or []
+            history.append([new_message.strip(), int(prediction[0]), True])
 
-    @app.callback(
-        Output("chat-messages", "children", allow_duplicate=True),
-        Input("chat-history", "data"),
-        prevent_initial_call=True
-    )
-    def re_render_chat(history):
-        if history is None:
-            raise dash.exceptions.PreventUpdate
-        return render_messages(history)
+            # Очищаем поле ввода после отправки
+            return history, render_messages(history), ""
+
+        elif "type" in trigger_id:
+            # Если история пуста, то не обновляем
+            if history is None:
+                raise dash.exceptions.PreventUpdate
+
+            # Проверяем, на какой смайл кликнули
+            try:
+                triggered_dict = json.loads(trigger_id)  # { "type": "emoji", "msg_index": i, "index": j }
+                msg_i = triggered_dict["msg_index"]
+                cls_i = triggered_dict["index"]
+            except (json.JSONDecodeError, KeyError, TypeError):
+                raise dash.exceptions.PreventUpdate
+
+            if 0 <= msg_i < len(history):
+                # Скрываем окно смайлов
+                history[msg_i][-1] = False
+                add_feedback(user_id, history[msg_i][0], cls_i)
+
+            return history, render_messages(history), dash.no_update
+
+        raise dash.exceptions.PreventUpdate

@@ -8,3 +8,5 @@ dash-bootstrap-components
 dash-iconify
 beautifulsoup4
 openpyxl
+flask
+peft

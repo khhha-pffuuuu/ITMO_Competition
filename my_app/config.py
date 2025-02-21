@@ -12,5 +12,11 @@ ACCENT_COLOR = "#404040"
 PLACEHOLDER_COLOR = "#888888"
 
 # Название базовой модели и путь к весам дообученной
-model_path = "../models"
+base_model_path = "../models/base_model"
 
+# Словарь вида: Id -> Тональность
+ID2CLS = {
+    0: 'Negative',
+    1: 'Neutral',
+    2: 'Positive'
+}

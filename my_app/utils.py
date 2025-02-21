@@ -1,3 +1,5 @@
+import os
+
 import base64
 import io
 from bs4 import BeautifulSoup
@@ -12,21 +14,62 @@ import torch.nn.functional as f
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from dash import html
-from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCENT_COLOR, PLACEHOLDER_COLOR
+from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCENT_COLOR, PLACEHOLDER_COLOR, base_model_path
+from db.db_utils import get_user
+
+from peft import get_peft_model, LoraConfig, PeftModel
 
 
 # Загрузка модели
-def load_model(model_path):
-    tokenizer = AutoTokenizer.from_pretrained(model_path + '/base_model')
-    model = AutoModelForSequenceClassification.from_pretrained(model_path + '/base_model')
+def load_model(user_model_path):
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
+    base_model = AutoModelForSequenceClassification.from_pretrained(base_model_path)
+
+    model = PeftModel.from_pretrained(base_model, user_model_path)
 
     return tokenizer, model
 
 
+def get_user_model(user_id):
+    """Получает путь к модели пользователя из БД и загружает модель"""
+    user = get_user(user_id)
+    user_model_path = user[2]
+
+    return load_model(user_model_path)
+
+
+def create_peft_copy(user_model_path):
+    """
+    Создает PEFT‑копию базовой модели для нового пользователя.
+    Если необходимо, здесь можно добавить вызов get_peft_model для дообучения модели.
+    Пока что функция просто копирует базовую модель в новую папку.
+    """
+    # Создаем папку, если её нет
+    if not os.path.exists(user_model_path):
+        os.makedirs(user_model_path)
+
+    # Загружаем базовую модель и токенизатор
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
+    model = AutoModelForSequenceClassification.from_pretrained(base_model_path)
+
+    # Если хотите добавить PEFT, можно использовать примерно так (пример, не обязательный):
+    config = LoraConfig(
+        r=8,
+        lora_alpha=32,
+        lora_dropout=0.1,
+        target_modules=['query', 'key', 'value'],
+        bias="none"
+    )
+    model = get_peft_model(model, config)
+
+    # Сохраняем модель в новую папку
+    model.save_pretrained(user_model_path)
+
+
 # Очистка текстов
-def html_to_text(html):
-    soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text(separator=" ")
+def html_to_text(html_text):
+    soup = BeautifulSoup(html_text, "html.parser")
+    text = soup.get_text()
     text = text.replace("\xa0", " ")
 
     return text.strip()
@@ -48,22 +91,11 @@ def predict(model, tokenizer, df):
     return pred
 
 
-# Глобальные переменные для статистики классов и значений меток классов
-classes_counts = None
-idx2classes = {
-    0: 'B',  # Отрицательный класс
-    1: 'N',  # Нейтральный класс
-    2: 'G'  # Положительный класс
-}
-
-
-def parse_contents(contents, filename, model, tokenizer):
+def parse_contents(contents, filename):
     """
     Декодирует файл, загружает его в pandas. DataFrame и выполняет предсказание.
     Обновляет глобальную переменную classes_counts.
     """
-    global classes_counts, idx2classes
-
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
 
@@ -75,22 +107,20 @@ def parse_contents(contents, filename, model, tokenizer):
         else:
             return None
 
-        # Предсказываем классы
-        df['labels'] = predict(model, tokenizer, df)
-        df.labels = df.labels.apply(lambda x: idx2classes[x])
-
-        # Считаем статистику
-        unique_classes, counts = np.unique(df.labels, return_counts=True)
-        stats = {i: 0 for i in ['B', 'N', 'G']}
-        for i in range(len(unique_classes)):
-            stats[unique_classes[i]] = counts[i]
-
-        classes_counts = stats  # обновляем статистику
-
-        return df, classes_counts
+        return df
     except Exception as e:
         print("Ошибка при чтении файла:", e)
         return None
+
+
+def compute_stats(df):
+    # Считаем статистику
+    unique_classes, counts = np.unique(df.Class, return_counts=True)
+    stats = {i: 0 for i in ['Negative', 'Neutral', 'Positive']}
+    for i in range(len(unique_classes)):
+        stats[unique_classes[i]] = counts[i]
+
+    return stats
 
 
 def render_messages(history):
@@ -177,54 +207,4 @@ def render_messages(history):
 
 
 def chat_fine_tuning(model, tokenizer, text, pred, feedback):
-    # Токенизируем текст
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding="max_length", max_length=128)
-    labels = torch.tensor(feedback)  # No need to unsqueeze, as feedback is a single integer
-    
-    # Создаем датасет из одного семпла
-    class SingleSampleDataset(torch.utils.data.Dataset):
-        def __init__(self, inputs, labels):
-            self.inputs = inputs
-            self.labels = labels
-        
-        def __len__(self):
-            return 1
-        
-        def __getitem__(self, idx):
-            item = {key: val[idx] for key, val in self.inputs.items()}
-            item["labels"] = self.labels
-            return item
-    
-    dataset = SingleSampleDataset(inputs, labels)
-    
-    # Настройки обучения
-    training_args = TrainingArguments(
-        output_dir="./single_sample_model",
-        num_train_epochs=1,
-        per_device_train_batch_size=1,
-        logging_steps=1,
-        save_steps=1,
-        learning_rate=5e-7,
-        evaluation_strategy="no"
-    )
-    
-    # Обновляем функцию потерь, если нужно
-    class CustomTrainer(Trainer):
-        def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-            labels = inputs.pop("labels")
-            outputs = model(**inputs)
-            logits = outputs.logits
-            loss_fn = torch.nn.CrossEntropyLoss()
-            loss = loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
-            return (loss, outputs) if return_outputs else loss
-    
-    # Создаем тренера
-    trainer = CustomTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=dataset,
-    )
-    
-    # Начинаем обучение
-    trainer.train()
     print('Типа дообучилась')
