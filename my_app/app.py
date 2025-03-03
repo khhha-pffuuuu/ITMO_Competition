@@ -1,5 +1,5 @@
 import dash
-from config import external_stylesheets
+from config import STYLESHEETS
 from layout import serve_layout
 from callbacks import register_callbacks
 from server import create_server
@@ -8,7 +8,7 @@ from server import create_server
 server = create_server()
 
 # Инициализация Dash-приложения
-app = dash.Dash(__name__, server=server, external_stylesheets=external_stylesheets)
+app = dash.Dash(__name__, server=server, external_stylesheets=STYLESHEETS)
 
 app.title = "Анализ тональности"
 

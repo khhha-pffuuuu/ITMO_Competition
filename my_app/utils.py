@@ -11,19 +11,27 @@ import torch as t
 from torch import nn
 import torch.nn.functional as f
 
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
+                          TrainingArguments, Trainer, EarlyStoppingCallback)
 
 from dash import html
-from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCENT_COLOR, PLACEHOLDER_COLOR, base_model_path
+from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCENT_COLOR, PLACEHOLDER_COLOR, BSM_PATH, METRIC_THR
 from db.db_utils import get_user
 
 from peft import get_peft_model, LoraConfig, PeftModel
+from datasets import Dataset
+
+import threading
+
+from sklearn.metrics import recall_score
+
+import wandb
 
 
 # Загрузка модели
 def load_model(user_model_path):
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
-    base_model = AutoModelForSequenceClassification.from_pretrained(base_model_path)
+    tokenizer = AutoTokenizer.from_pretrained(BSM_PATH)
+    base_model = AutoModelForSequenceClassification.from_pretrained(BSM_PATH)
 
     model = PeftModel.from_pretrained(base_model, user_model_path)
 
@@ -49,8 +57,8 @@ def create_peft_copy(user_model_path):
         os.makedirs(user_model_path)
 
     # Загружаем базовую модель и токенизатор
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
-    model = AutoModelForSequenceClassification.from_pretrained(base_model_path)
+    tokenizer = AutoTokenizer.from_pretrained(BSM_PATH)
+    model = AutoModelForSequenceClassification.from_pretrained(BSM_PATH)
 
     # Если хотите добавить PEFT, можно использовать примерно так (пример, не обязательный):
     config = LoraConfig(
@@ -64,6 +72,14 @@ def create_peft_copy(user_model_path):
 
     # Сохраняем модель в новую папку
     model.save_pretrained(user_model_path)
+
+
+def set_adapter(model):
+    for name, param in model.named_parameters():
+        if "lora" in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
 
 
 # Очистка текстов
@@ -206,5 +222,88 @@ def render_messages(history):
     return messages
 
 
-def chat_fine_tuning(model, tokenizer, text, pred, feedback):
-    print('Типа дообучилась')
+def start_fine_tuning(model, tokenizer, user_id, train_data):
+    thread = threading.Thread(target=fine_tuning, args=(model, tokenizer, user_id, train_data))
+    thread.start()
+
+
+def fine_tuning(model, tokenizer, user_id, train_data):
+    print(f'Дообучение модели для пользователя {user_id}...')
+
+    set_adapter(model)
+
+    try:
+        # Получим путь к модели пользователя
+        user = get_user(user_id)
+        user_model_path = user[2]
+
+        eval_data = pd.read_excel('../data/test_dataset.xlsx')
+
+        def preprocess_function(examples):
+            inputs = tokenizer(
+                examples['MessageText'],
+                truncation=True,
+                padding='max_length',
+                max_length=256,
+                return_tensors="pt"
+            )
+
+            return inputs
+
+        train_dataset = Dataset.from_pandas(train_data).map(preprocess_function, batched=True, num_proc=4)
+        eval_dataset = Dataset.from_pandas(eval_data).map(preprocess_function, batched=True, num_proc=4)
+
+        # Отключаем wandb
+        wandb.init(mode="disabled")
+
+        def compute_metrics(eval_pred):
+            logits, labels = eval_pred
+            predictions = np.argmax(logits, axis=1)
+
+            score = recall_score(labels, predictions, average="macro")
+
+            return {"eval_recall": score}
+
+        training_args = TrainingArguments(
+            output_dir=f"{user_model_path}/tmp_finetune",
+            run_name='output_dir',
+            per_device_train_batch_size=8,
+            per_device_eval_batch_size=8,
+            dataloader_num_workers=4,
+            num_train_epochs=5,
+            weight_decay=0.05,
+            learning_rate=1e-5,
+            eval_strategy="epoch",
+            save_strategy="epoch",
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_recall",
+            greater_is_better=True,
+            label_names=['labels'],
+            report_to=None,
+            disable_tqdm=True,
+            use_cpu=True
+        )
+
+        trainer = Trainer(
+            model=model,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            args=training_args,
+            compute_metrics=compute_metrics,
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=2)]
+        )
+
+        trainer.train()
+
+        eval_results = trainer.evaluate()
+        eval_recall = eval_results.get('eval_recall', None)
+
+        print(f'Значение Recall на тестовой выборке: {eval_recall}')
+        if eval_recall is not None and eval_recall >= METRIC_THR:
+            model.save_pretrained(user_model_path)
+            print(f'Дообученная модель для пользователя {user_id} сохранена!')
+        else:
+            print(f'Значение целевой метрики оказалось ниже требуемого порога, модель не сохранена.')
+
+    except Exception as e:
+        print(f'Ошибка при дообучении: {e}')

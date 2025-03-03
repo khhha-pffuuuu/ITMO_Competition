@@ -24,7 +24,7 @@ def create_server():
 
             add_user(user_id, model_path=user_model_path)
             response = make_response(redirect("/"))
-            response.set_cookie("user_id", user_id, max_age=365 * 30 * 24 * 60 * 60)
+            response.set_cookie("user_id", user_id, max_age=365 * 30 * 24 * 60 * 60)  # Файлы cookie хранятся год
 
             return response
 

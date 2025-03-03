@@ -10,3 +10,6 @@ beautifulsoup4
 openpyxl
 flask
 peft
+datasets
+scikit-learn
+wandb

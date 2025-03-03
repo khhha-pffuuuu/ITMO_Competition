@@ -13,9 +13,9 @@ import plotly.graph_objs as go
 from flask import request
 
 from config import MAIN_BG_COLOR, BORDER_COLOR, CARD_BG_COLOR, TEXT_COLOR, ACCENT_COLOR, PLACEHOLDER_COLOR, ID2CLS
-from utils import get_user_model, parse_contents, predict, compute_stats, render_messages
+from utils import get_user_model, parse_contents, predict, compute_stats, render_messages, start_fine_tuning
 
-from db.db_utils import add_feedback
+from db.db_utils import add_feedback, extract_and_delete_feedback
 
 
 def register_callbacks(app):
@@ -258,6 +258,11 @@ def register_callbacks(app):
                 # Скрываем окно смайлов
                 history[msg_i][-1] = False
                 add_feedback(user_id, history[msg_i][0], cls_i)
+
+                # Проверяем, накопилось ли для данного пользователя 100 сообщений
+                df_feedback = extract_and_delete_feedback(user_id)
+                if df_feedback is not None:
+                    start_fine_tuning(model, tokenizer, user_id, df_feedback)
 
             return history, render_messages(history), dash.no_update
 

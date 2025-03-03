@@ -256,6 +256,7 @@ layout = dbc.Container([
         size="lg"
     )
 ], fluid=True, style={"backgroundColor": MAIN_BG_COLOR, "width": "80%", "marginTop": "20px"})
-def serve_layout():
 
+
+def serve_layout():
     return layout

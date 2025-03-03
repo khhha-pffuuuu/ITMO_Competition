@@ -1,7 +1,7 @@
 import dash_bootstrap_components as dbc
 
 # Внешние стили (темы Bootstrap)
-external_stylesheets = [dbc.themes.DARKLY]
+STYLESHEETS = [dbc.themes.DARKLY]
 
 # Цветовая схема
 MAIN_BG_COLOR = "#222222"
@@ -12,7 +12,7 @@ ACCENT_COLOR = "#404040"
 PLACEHOLDER_COLOR = "#888888"
 
 # Название базовой модели и путь к весам дообученной
-base_model_path = "../models/base_model"
+BSM_PATH = "../models/base_model"
 
 # Словарь вида: Id -> Тональность
 ID2CLS = {
@@ -20,3 +20,6 @@ ID2CLS = {
     1: 'Neutral',
     2: 'Positive'
 }
+
+# Порог для сохранения дообученной модели
+METRIC_THR = 0.7
